@@ -92,6 +92,9 @@ sysinfo.txt
 *.private
 *.private.meta
 
+# Fonts
+*SDF.asset
+
 # TextMesh Pro
 /[Aa]ssets/TextMesh Pro/
 
