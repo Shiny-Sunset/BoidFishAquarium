@@ -1,4 +1,8 @@
-﻿#pragma kernel CSMain
+﻿// This code is based on Boids by Sebastian Lague
+// Copyright (c) 2019 Sebastian Lague
+// Released under the MIT license
+
+#pragma kernel CSMain
 static const int threadGroupSize = 1024;
 
 struct Boid {

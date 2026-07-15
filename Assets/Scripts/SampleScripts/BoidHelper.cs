@@ -1,4 +1,8 @@
-﻿using System.Collections;
+﻿// This code is based on Boids by Sebastian Lague
+// Copyright (c) 2019 Sebastian Lague
+// Released under the MIT license
+
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 

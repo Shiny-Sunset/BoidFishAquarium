@@ -40,3 +40,12 @@ Boids Algorithm を用いた魚群シミュレーションアプリです。水�
 ## 技術
 
 - **Boids Algorithm** — 分離 (Separation)・整列 (Alignment)・結合 (Cohesion) の3つのルールで群れの動きを再現
+
+## Licenses / 謝辞
+
+本プロジェクトの一部では、以下のMITライセンスのオープンソースソフトウェアを使用しています。
+
+**[Boids](https://github.com/SebLague/Boids)**
+Copyright (c) 2019 Sebastian Lague
+Released under the MIT license
+https://opensource.org/licenses/mit-license.php
