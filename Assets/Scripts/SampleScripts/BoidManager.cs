@@ -4,9 +4,8 @@ using UnityEngine;
 
 public class BoidManager : MonoBehaviour {
 
-    const int threadGroupSize = 1024;
-
     public BoidSettings settings;
+    [Tooltip("旧GPU実装用。WebGL は Compute Shader 非対応のため現在は未使用（近傍集計は CPU で実行）。")]
     public ComputeShader compute;
     Boid[] boids;
     List<GameObject> foodObjects;
@@ -57,68 +56,67 @@ public class BoidManager : MonoBehaviour {
     }
 
     void Update () {
-        if (boids != null) {
+        if (boids == null) return;
 
-            int numBoids = boids.Length;
-            var boidData = new BoidData[numBoids];
+        int numBoids = boids.Length;
 
-            for (int i = 0; i < boids.Length; i++) {
-                boidData[i].position = boids[i].position;
-                boidData[i].direction = boids[i].forward;
-            }
+        // --- 近傍集計を CPU で実行 ---
+        // WebGL は Compute Shader 非対応のため、BoidCompute.computeを
+        // CPU の総当たり O(N^2) 集計へ置き換え。i<j の対称ループで計算量を半減している。
+        // 各 Boid に渡す集計値（合計の向き・重心・分離ベクトル・仲間数）の意味は GPU 版と同一。
+        float sqrViewRadius  = settings.perceptionRadius * settings.perceptionRadius;
+        float sqrAvoidRadius = settings.avoidanceRadius  * settings.avoidanceRadius;
 
-            var boidBuffer = new ComputeBuffer (numBoids, BoidData.Size);
-            boidBuffer.SetData (boidData);
+        // 集計値をリセット
+        for (int i = 0; i < numBoids; i++) {
+            boids[i].numPerceivedFlockmates = 0;
+            boids[i].avgFlockHeading        = Vector3.zero;
+            boids[i].centreOfFlockmates     = Vector3.zero;
+            boids[i].avgAvoidanceHeading    = Vector3.zero;
+        }
 
-            compute.SetBuffer (0, "boids", boidBuffer);
-            compute.SetInt ("numBoids", boids.Length);
-            compute.SetFloat ("viewRadius", settings.perceptionRadius);
-            compute.SetFloat ("avoidRadius", settings.avoidanceRadius);
+        // 総当たりで近傍を集計（sqrDst のまま比較して √ を省略）
+        for (int i = 0; i < numBoids; i++) {
+            for (int j = i + 1; j < numBoids; j++) {
+                Vector3 offset = boids[j].position - boids[i].position; // j - i
+                float sqrDst = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
 
-            int threadGroups = Mathf.CeilToInt (numBoids / (float) threadGroupSize);
-            compute.Dispatch (0, threadGroups, 1, 1);
+                if (sqrDst < sqrViewRadius) {
+                    // 視界内：互いを仲間として集計（対称）
+                    boids[i].numPerceivedFlockmates += 1;
+                    boids[i].avgFlockHeading    += boids[j].forward;
+                    boids[i].centreOfFlockmates += boids[j].position;
 
-            boidBuffer.GetData (boidData);
+                    boids[j].numPerceivedFlockmates += 1;
+                    boids[j].avgFlockHeading    += boids[i].forward;
+                    boids[j].centreOfFlockmates += boids[i].position;
 
-            for (int i = 0; i < boids.Length; i++) {
-                boids[i].avgFlockHeading = boidData[i].flockHeading;
-                boids[i].centreOfFlockmates = boidData[i].flockCentre;
-                boids[i].avgAvoidanceHeading = boidData[i].avoidanceHeading;
-                boids[i].numPerceivedFlockmates = boidData[i].numFlockmates;
-
-                // Find closest food
-                Vector3 closestFoodPos = Vector3.zero;
-                float minFoodDist = float.MaxValue;
-                foreach (GameObject food in foodObjects) {
-                    if (food == null) continue; // Skip if food object is destroyed
-                    float dist = Vector3.Distance(boids[i].position, food.transform.position);
-                    if (dist < minFoodDist) {
-                        minFoodDist = dist;
-                        closestFoodPos = food.transform.position;
+                    if (sqrDst < sqrAvoidRadius) {
+                        // 分離：逆二乗で反発。offset=(j-i) なので i は -offset、j は +offset で互いに離れる
+                        Vector3 sep = offset / sqrDst;
+                        boids[i].avgAvoidanceHeading -= sep;
+                        boids[j].avgAvoidanceHeading += sep;
                     }
                 }
-                boids[i].closestFood = closestFoodPos;
-
-                boids[i].UpdateBoid ();
             }
-
-            boidBuffer.Release ();
         }
-    }
 
-    public struct BoidData {
-        public Vector3 position;
-        public Vector3 direction;
-
-        public Vector3 flockHeading;
-        public Vector3 flockCentre;
-        public Vector3 avoidanceHeading;
-        public int numFlockmates;
-
-        public static int Size {
-            get {
-                return sizeof (float) * 3 * 5 + sizeof (int);
+        // --- 各個体のステアリング更新 ---
+        for (int i = 0; i < numBoids; i++) {
+            // 最寄りの餌を検索
+            Vector3 closestFoodPos = Vector3.zero;
+            float minFoodDist = float.MaxValue;
+            foreach (GameObject food in foodObjects) {
+                if (food == null) continue; // 破棄済みはスキップ
+                float dist = Vector3.Distance(boids[i].position, food.transform.position);
+                if (dist < minFoodDist) {
+                    minFoodDist = dist;
+                    closestFoodPos = food.transform.position;
+                }
             }
+            boids[i].closestFood = closestFoodPos;
+
+            boids[i].UpdateBoid ();
         }
     }
 }
